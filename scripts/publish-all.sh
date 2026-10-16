@@ -37,9 +37,22 @@ for repo in "${repos[@]}"; do
     printf 'Есть незакоммиченные изменения: %s\n' "$repo_dir" >&2
     exit 1
   fi
+  remote_url="$(git -C "$repo_dir" remote get-url origin)"
+  if [[ "$remote_url" != "https://github.com/$owner/$repo.git" && "$remote_url" != "git@github.com:$owner/$repo.git" ]]; then
+    printf 'Неожиданный origin у %s: %s\n' "$repo" "$remote_url" >&2
+    exit 1
+  fi
   if ! timeout 30s gh repo view "$owner/$repo" --json name --jq .name >/dev/null; then
     printf 'Нет доступа к репозиторию %s/%s; push ещё не выполнялся.\n' "$owner" "$repo" >&2
     exit 1
+  fi
+  remote_main="$(timeout 30s git -C "$repo_dir" ls-remote --heads origin main)"
+  if [[ -n "$remote_main" ]]; then
+    timeout 30s git -C "$repo_dir" fetch origin main
+    if ! git -C "$repo_dir" merge-base --is-ancestor FETCH_HEAD HEAD; then
+      printf 'Ветка origin/main у %s не является предком локальной main; push ещё не выполнялся.\n' "$repo" >&2
+      exit 1
+    fi
   fi
 done
 
